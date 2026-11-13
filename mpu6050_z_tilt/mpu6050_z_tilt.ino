@@ -17,7 +17,9 @@
 //                       +90 deg when Z points straight up (board flat, chip facing up),
 //                       -90 deg when Z points straight down.
 //         Roll:         rotation about the Z axis, 0 when +Y is up, +90 when +X is up.
-//                       Valid when Z is near the horizon; undefined when Z is vertical.
+//                       Gyro-integrated so it works when flat; corrected by gravity
+//                       whenever Z is tilted away from vertical. While held flat it
+//                       relies on the gyro alone and will drift slowly.
 //
 // Keep the sensor still for the first ~2 seconds after reset (gyro bias calibration).
 
@@ -31,7 +33,14 @@ const uint16_t CALIB_SAMPLES = 500;   // gyro bias samples at startup
 
 float gBiasX = 0, gBiasY = 0, gBiasZ = 0;   // gyro bias, rad/s
 float gx_est = 0, gy_est = 0, gz_est = 1;   // estimated gravity direction (unit vector)
+float rollDeg = 0;                           // roll about Z, degrees, gyro-integrated
 unsigned long lastMicros = 0;
+
+float wrap180(float a) {
+  while (a > 180.0)  a -= 360.0;
+  while (a <= -180.0) a += 360.0;
+  return a;
+}
 
 void writeReg(uint8_t reg, uint8_t val) {
   Wire.beginTransmission(MPU_ADDR);
@@ -93,10 +102,11 @@ void setup() {
   }
   if (n > 0) { gBiasX = sx / n; gBiasY = sy / n; gBiasZ = sz / n; }
 
-  // Seed the gravity estimate from the accelerometer
+  // Seed the gravity estimate and roll from the accelerometer
   if (readRaw(ax, ay, az, gx, gy, gz)) {
     gx_est = ax; gy_est = ay; gz_est = az;
     normalize(gx_est, gy_est, gz_est);
+    rollDeg = atan2(gx_est, gy_est) * 180.0 / PI;
   }
   Serial.println("Done.");
   lastMicros = micros();
@@ -137,11 +147,20 @@ void loop() {
   // Elevation of the Z axis above the horizontal plane
   float angleDeg = atan2(gz_est, sqrt(gx_est * gx_est + gy_est * gy_est)) * 180.0 / PI;
 
-  // Roll: rotation about the Z axis, from the direction of gravity in the XY plane.
+  // Roll: rotation about the Z axis.
   // 0 when +Y points up, +90 when +X points up, +/-180 when +Y points down.
-  // Only meaningful when Z is near the horizon; it becomes undefined as Z
-  // approaches vertical (gravity has no XY component to measure against).
-  float rollDeg = atan2(gx_est, gy_est) * 180.0 / PI;
+  // The Z gyro is integrated every step, so roll keeps working when the board is
+  // flat. When Z is near the horizon, gravity's XY direction gives an absolute
+  // roll reference and is blended in to cancel gyro drift. The blend weight is
+  // the fraction of gravity in the XY plane: full strength on edge, zero when flat.
+  rollDeg = wrap180(rollDeg + wz * (180.0 / PI) * dt);
+
+  float horiz = sqrt(mx * mx + my * my);           // 0 flat .. 1 on edge
+  if (horiz > 0.05) {
+    float accelRoll = atan2(mx, my) * 180.0 / PI;
+    float err = wrap180(accelRoll - rollDeg);
+    rollDeg = wrap180(rollDeg + (1.0 - ALPHA) * horiz * err);
+  }
 
   Serial.print("Z vs horizon: ");
   Serial.print(angleDeg, 1);
