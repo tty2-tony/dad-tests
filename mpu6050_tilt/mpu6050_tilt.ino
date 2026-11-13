@@ -27,6 +27,7 @@
 //
 // LED: brightness follows the Y elevation. Off when Y is at or below the horizon,
 //      ramping (squared, for an even-looking fade) to fully on when +Y points straight up.
+//      Roll scales it down: full effect at roll 0, fully off at roll 90.
 //
 // Keep the sensor still for the first ~2 seconds after reset (gyro bias calibration).
 
@@ -173,14 +174,16 @@ void loop() {
     rollDeg = wrap180(rollDeg + (1.0 - ALPHA) * horiz * err);
   }
 
-  // LED brightness: 0 at or below the horizon, 255 with +Y straight up.
-  // The level is squared so the fade looks even to the eye.
-  float level = constrain(angleDeg, 0.0, 90.0) / 90.0;
-  level *= level;
-  analogWrite(LED_PIN, (uint8_t)(level * 255.0 + 0.5));
-
   // Fold the signed roll to 0..90: 0 with Z up or down, 90 with X up or down.
   float rollOut = fabs(wrap180(rollDeg * 2.0) / 2.0);
+
+  // LED brightness: 0 at or below the horizon, 255 with +Y straight up,
+  // scaled down by roll so it is fully off at roll 90 and unaffected at roll 0.
+  // The level is squared so the fade looks even to the eye.
+  float level = constrain(angleDeg, 0.0, 90.0) / 90.0;
+  level *= (90.0 - rollOut) / 90.0;
+  level *= level;
+  analogWrite(LED_PIN, (uint8_t)(level * 255.0 + 0.5));
 
   Serial.print("Y vs horizon: ");
   Serial.print(angleDeg, 1);
