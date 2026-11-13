@@ -1,4 +1,5 @@
-// Arduino Nano + MPU6050: print the angle between the sensor's Z axis and the horizon.
+// Arduino Nano + MPU6050: print the angle between the sensor's Y axis and the horizon,
+// plus roll about the Y axis.
 //
 // Wiring (Nano):  VCC -> 5V (module has a regulator) or 3.3V
 //                 GND -> GND
@@ -13,13 +14,14 @@
 // The angle is then taken from the fused vector, so it stays stable under
 // vibration and short accelerations but does not drift over time.
 //
-// Output: Z vs horizon: 0 deg when Z is horizontal (board on its edge),
-//                       +90 deg when Z points straight up (board flat, chip facing up),
-//                       -90 deg when Z points straight down.
-//         Roll:         rotation about the Z axis, 0 when +Y is up, +90 when +X is up.
-//                       Gyro-integrated so it works when flat; corrected by gravity
-//                       whenever Z is tilted away from vertical. While held flat it
-//                       relies on the gyro alone and will drift slowly.
+// Output: Y vs horizon: 0 deg when Y is horizontal,
+//                       +90 deg when +Y points straight up,
+//                       -90 deg when +Y points straight down.
+//         Roll:         rotation about the Y axis, 0 when +Z is up, +90 when -X is up
+//                       (positive for right-hand rotation about +Y).
+//                       Gyro-integrated so it works when Y is vertical; corrected by
+//                       gravity whenever Y is tilted away from vertical. While Y is
+//                       held vertical it relies on the gyro alone and will drift slowly.
 //
 // Keep the sensor still for the first ~2 seconds after reset (gyro bias calibration).
 
@@ -33,7 +35,7 @@ const uint16_t CALIB_SAMPLES = 500;   // gyro bias samples at startup
 
 float gBiasX = 0, gBiasY = 0, gBiasZ = 0;   // gyro bias, rad/s
 float gx_est = 0, gy_est = 0, gz_est = 1;   // estimated gravity direction (unit vector)
-float rollDeg = 0;                           // roll about Z, degrees, gyro-integrated
+float rollDeg = 0;                           // roll about Y, degrees, gyro-integrated
 unsigned long lastMicros = 0;
 
 float wrap180(float a) {
@@ -106,7 +108,7 @@ void setup() {
   if (readRaw(ax, ay, az, gx, gy, gz)) {
     gx_est = ax; gy_est = ay; gz_est = az;
     normalize(gx_est, gy_est, gz_est);
-    rollDeg = atan2(gx_est, gy_est) * 180.0 / PI;
+    rollDeg = atan2(-gx_est, gz_est) * 180.0 / PI;
   }
   Serial.println("Done.");
   lastMicros = micros();
@@ -144,25 +146,26 @@ void loop() {
   gz_est = ALPHA * pz + (1.0 - ALPHA) * mz;
   normalize(gx_est, gy_est, gz_est);
 
-  // Elevation of the Z axis above the horizontal plane
-  float angleDeg = atan2(gz_est, sqrt(gx_est * gx_est + gy_est * gy_est)) * 180.0 / PI;
+  // Elevation of the Y axis above the horizontal plane
+  float angleDeg = atan2(gy_est, sqrt(gx_est * gx_est + gz_est * gz_est)) * 180.0 / PI;
 
-  // Roll: rotation about the Z axis.
-  // 0 when +Y points up, +90 when +X points up, +/-180 when +Y points down.
-  // The Z gyro is integrated every step, so roll keeps working when the board is
-  // flat. When Z is near the horizon, gravity's XY direction gives an absolute
-  // roll reference and is blended in to cancel gyro drift. The blend weight is
-  // the fraction of gravity in the XY plane: full strength on edge, zero when flat.
-  rollDeg = wrap180(rollDeg + wz * (180.0 / PI) * dt);
+  // Roll: rotation about the Y axis.
+  // 0 when +Z points up, +90 when -X points up, +/-180 when +Z points down.
+  // The Y gyro is integrated every step, so roll keeps working when Y is vertical.
+  // When Y is near the horizon, gravity's XZ direction gives an absolute roll
+  // reference and is blended in to cancel gyro drift. The blend weight is the
+  // fraction of gravity in the XZ plane: full strength with Y horizontal, zero
+  // with Y vertical.
+  rollDeg = wrap180(rollDeg + wy * (180.0 / PI) * dt);
 
-  float horiz = sqrt(mx * mx + my * my);           // 0 flat .. 1 on edge
+  float horiz = sqrt(mx * mx + mz * mz);           // 0 Y vertical .. 1 Y horizontal
   if (horiz > 0.05) {
-    float accelRoll = atan2(mx, my) * 180.0 / PI;
+    float accelRoll = atan2(-mx, mz) * 180.0 / PI;
     float err = wrap180(accelRoll - rollDeg);
     rollDeg = wrap180(rollDeg + (1.0 - ALPHA) * horiz * err);
   }
 
-  Serial.print("Z vs horizon: ");
+  Serial.print("Y vs horizon: ");
   Serial.print(angleDeg, 1);
   Serial.print(" deg   Roll: ");
   Serial.print(rollDeg, 1);
