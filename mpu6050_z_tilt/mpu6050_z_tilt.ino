@@ -13,9 +13,10 @@
 // The angle is then taken from the fused vector, so it stays stable under
 // vibration and short accelerations but does not drift over time.
 //
-// Output: 0 deg when Z is horizontal (board on its edge),
-//         +90 deg when Z points straight up (board flat, chip facing up),
-//         -90 deg when Z points straight down.
+// Output: Z vs horizon: 0 deg when Z is horizontal (board on its edge),
+//                       +90 deg when Z points straight up (board flat, chip facing up),
+//                       -90 deg when Z points straight down.
+//         Roll:         rotation about the X axis, 0 when flat, +/-180 upside down.
 //
 // Keep the sensor still for the first ~2 seconds after reset (gyro bias calibration).
 
@@ -135,8 +136,14 @@ void loop() {
   // Elevation of the Z axis above the horizontal plane
   float angleDeg = atan2(gz_est, sqrt(gx_est * gx_est + gy_est * gy_est)) * 180.0 / PI;
 
+  // Roll: rotation about the X axis. 0 when flat, +/-180 when upside down,
+  // positive when the +Y side drops below the -Y side.
+  float rollDeg = atan2(gy_est, gz_est) * 180.0 / PI;
+
   Serial.print("Z vs horizon: ");
   Serial.print(angleDeg, 1);
+  Serial.print(" deg   Roll: ");
+  Serial.print(rollDeg, 1);
   Serial.println(" deg");
 
   delay(10);                          // ~100 Hz loop
