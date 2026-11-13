@@ -17,8 +17,8 @@
 // Output: Y vs horizon: 0 deg when Y is horizontal,
 //                       +90 deg when +Y points straight up,
 //                       -90 deg when +Y points straight down.
-//         Roll:         rotation about the Y axis, 0 when +Z is up, +90 when -X is up
-//                       (positive for right-hand rotation about +Y).
+//         Roll:         tilt about the Y axis, reported 0..90 deg:
+//                       0 when Z is vertical (up or down), 90 when X is vertical (up or down).
 //                       Gyro-integrated so it works when Y is vertical; corrected by
 //                       gravity whenever Y is tilted away from vertical. While Y is
 //                       held vertical it relies on the gyro alone and will drift slowly.
@@ -35,7 +35,7 @@ const uint16_t CALIB_SAMPLES = 500;   // gyro bias samples at startup
 
 float gBiasX = 0, gBiasY = 0, gBiasZ = 0;   // gyro bias, rad/s
 float gx_est = 0, gy_est = 0, gz_est = 1;   // estimated gravity direction (unit vector)
-float rollDeg = 0;                           // roll about Y, degrees, gyro-integrated
+float rollDeg = 0;                           // signed roll about Y, degrees, gyro-integrated
 unsigned long lastMicros = 0;
 
 float wrap180(float a) {
@@ -149,7 +149,7 @@ void loop() {
   // Elevation of the Y axis above the horizontal plane
   float angleDeg = atan2(gy_est, sqrt(gx_est * gx_est + gz_est * gz_est)) * 180.0 / PI;
 
-  // Roll: rotation about the Y axis.
+  // Roll: rotation about the Y axis. Internally signed and continuous:
   // 0 when +Z points up, +90 when -X points up, +/-180 when +Z points down.
   // The Y gyro is integrated every step, so roll keeps working when Y is vertical.
   // When Y is near the horizon, gravity's XZ direction gives an absolute roll
@@ -165,10 +165,13 @@ void loop() {
     rollDeg = wrap180(rollDeg + (1.0 - ALPHA) * horiz * err);
   }
 
+  // Fold the signed roll to 0..90: 0 with Z up or down, 90 with X up or down.
+  float rollOut = fabs(wrap180(rollDeg * 2.0) / 2.0);
+
   Serial.print("Y vs horizon: ");
   Serial.print(angleDeg, 1);
   Serial.print(" deg   Roll: ");
-  Serial.print(rollDeg, 1);
+  Serial.print(rollOut, 1);
   Serial.println(" deg");
 
   delay(10);                          // ~100 Hz loop
