@@ -5,6 +5,8 @@
 //                 GND -> GND
 //                 SDA -> A4
 //                 SCL -> A5
+//                 LED -> D9 through a 220-330 ohm resistor to the LED anode,
+//                        LED cathode to GND
 //
 // No library needed beyond Wire.
 //
@@ -23,11 +25,15 @@
 //                       gravity whenever Y is tilted away from vertical. While Y is
 //                       held vertical it relies on the gyro alone and will drift slowly.
 //
+// LED: brightness follows the Y elevation. Off when Y is at or below the horizon,
+//      ramping linearly to fully on when +Y points straight up.
+//
 // Keep the sensor still for the first ~2 seconds after reset (gyro bias calibration).
 
 #include <Wire.h>
 
 const uint8_t MPU_ADDR = 0x68;        // 0x69 if AD0 is tied high
+const uint8_t LED_PIN = 9;            // must be a PWM pin on the Nano: 3, 5, 6, 9, 10, 11
 
 const float GYRO_LSB_PER_DPS = 131.0; // +/-250 deg/s full scale
 const float ALPHA = 0.98;             // gyro weight; (1-ALPHA) is accel weight
@@ -82,6 +88,8 @@ void normalize(float &x, float &y, float &z) {
 void setup() {
   Serial.begin(115200);
   Wire.begin();
+  pinMode(LED_PIN, OUTPUT);
+  analogWrite(LED_PIN, 0);
 
   writeReg(0x6B, 0x00);               // PWR_MGMT_1: wake up
   writeReg(0x1C, 0x00);               // ACCEL_CONFIG: +/-2g
@@ -164,6 +172,10 @@ void loop() {
     float err = wrap180(accelRoll - rollDeg);
     rollDeg = wrap180(rollDeg + (1.0 - ALPHA) * horiz * err);
   }
+
+  // LED brightness: 0 at or below the horizon, 255 with +Y straight up.
+  float level = constrain(angleDeg, 0.0, 90.0) / 90.0;
+  analogWrite(LED_PIN, (uint8_t)(level * 255.0 + 0.5));
 
   // Fold the signed roll to 0..90: 0 with Z up or down, 90 with X up or down.
   float rollOut = fabs(wrap180(rollDeg * 2.0) / 2.0);
